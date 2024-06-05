@@ -10,8 +10,8 @@ cm_data_avg <- read_excel("submission1_averaged_community_matrix.xlsx")
 cm_data_rep1 <- read_excel("submission1A_community_matrix.xls", range = "A1:AW506")
 cm_data_rep2 <- read_excel("submission1B_community_matrix.xls")
 dissection_data <- read_excel("dissection_data_2023_updated2.xlsx", range = "A1:M70")
-host1_data <- read_excel("obj3_cleaned_data_host1_updated.xlsx")
-host2_data <- read_excel("obj3_cleaned_data_host2_updated.xlsx")
+host1_data <- read_csv("obj3_cleaned_data_host1_updated.csv")
+host2_data <- read_csv("obj3_cleaned_data_host2_updated.csv")
 
 
 
@@ -82,6 +82,8 @@ host2_columns <- data.frame(tag = host2_data$`Lamprey Tag (color)`,
 host_data <- full_join(host1_columns, host2_columns, by = "tag",
                        suffix = c("_1", "_2"))
 
+#--- checking for duplicates
+
 # may be some duplicate tag numbers, so let's look into those
 duplicate_tags_host1 <- host1_columns %>%
   group_by(tag) %>%
@@ -142,11 +144,12 @@ full_host_data %>%
 # will just discard these from the analysis
 
 
-#---------
-# now, align host order data with sequencing data
-
+#--------- Aligning Host Data with Sequence Data
 # first re-label tubes to match with the host data
 full_host_data$tube <- sub("T20(\\d{2}_\\d+)", "T\\1", full_host_data$tube)
+
+
+# can align host order data with sequencing data (AVERAGED COMMUNITY MATRIX)
 # full join
 full_data <- full_host_data %>%
   rename(sample = tube) %>%
@@ -159,6 +162,19 @@ full_data <- full_data %>% arrange(sample)
 # write out as own data file
 write_csv(full_data, "host_switch_data_averaged.csv")
 
+
+# can also combine with REPLICATE SPECIFIC DATA
+
+# start with combining replicate read data
+cm_both_reps <- full_join(cm_data_rep1, cm_data_rep2, by = "sample", suffix = c("_rep1", "_rep2"))
+# match up sample name regex patterns (ensure that number has two digits)
+cm_both_reps$sample <- sub("T23_(\\d)$", "T23_0\\1", cm_both_reps$sample)
+# join
+full_reps_data <- full_host_data %>%
+  rename(sample = tube) %>%
+  full_join(cm_both_reps, by = "sample")
+# write out
+write_csv(full_reps_data, "host_switch_data_replicates.csv")
 
 
 
