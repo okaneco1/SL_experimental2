@@ -6,6 +6,7 @@ options(scipen = 999)
 library(tidyverse)
 library(readxl)
 library(patchwork)
+library(RColorBrewer)
 
 # import data
 host_data <- read_csv("host_switch_data_averaged.csv")
@@ -21,7 +22,7 @@ seq_count <- cm_data_avg %>%
 
 # structure adjustments
 host_data$fasting_days <- as.numeric(host_data$fasting_days)
-
+cm_data_reps$fasting_days <- as.numeric(cm_data_reps$fasting_days)
 
 #------ Data Organization (REPLICATES COMMUNITY MATRIX)
 
@@ -55,7 +56,9 @@ host_data_reps <- cm_data_reps %>%
   mutate(lt_det_rep2 = ifelse(lake_trout_reads_rep2 <= threshold | rra_lt_rep2 < rra, 0, 1)) %>%
   mutate(ws_det_rep2 = ifelse(white_sucker_reads_rep2 <= threshold | rra_ws_rep2 < rra, 0, 1)) 
 
-
+# add total weight gain column
+host_data_reps <- host_data_reps %>%
+  mutate(total_weight_gain = weight_gain_1 + weight_gain_2)
 
 
 #----- Incorporate host detection data (first, second, both) into data frame
@@ -178,6 +181,7 @@ for (i in 1:nrow(host_data_reps)) {
 # Relating this to fasting period too (with variables such as weight gain included)
 # is important too understand real-world applicability
 
+
 # what were the total number and proportion of host 1 detections?
 host1_rep1_det_table <- table(host_data_reps$host1_det_rep1, useNA = "no")
 host1_rep2_det_table <- table(host_data_reps$host1_det_rep2, useNA = "no")
@@ -207,18 +211,96 @@ prop.table(both_rep2_det_table)
 # for detecting both, there was less consensus, with 17% in rep 1 and 11% in rep 2
 
 
+# let's create a table that summarizes the totals and proportion of detections
+# based on fasting days for host 1
+host1_detection_table <- data.frame(
+  fasting_days = unique(host_data_reps_clean$fasting_days),
+  detection_total = NA,
+  samples = NA,
+  det_proportion = NA
+)
+
+# fill in data
+for (i in 1:nrow(host1_detection_table)){
+  # set up detection data frame
+  rep_df <- host_data_reps_clean %>%
+    select(fasting_days, host1_det_rep1, host1_det_rep2) %>%
+    filter(fasting_days == host1_detection_table$fasting_days[i]) %>%
+    mutate(any_host_det = ifelse(host1_det_rep1 | host1_det_rep2 == 1, 1, 0))
+  # add in detection total
+  host1_detection_table$detection_total[i] <- sum(rep_df$any_host_det)
+  # add in sample number
+  host1_detection_table$samples[i] <- nrow(rep_df)
+  # add in detection proportion
+  host1_detection_table$det_proportion[i] <- round(host1_detection_table$detection_total[i]/host1_detection_table$samples[i], 3)
+}
+# reorder
+host1_detection_table <- arrange(host1_detection_table, fasting_days)
+host1_detection_table
+
+# visualize with bar chart (detection proportion)
+ggplot(host1_detection_table, aes(x = as.factor(fasting_days), y = det_proportion)) +
+  geom_bar(stat = "identity", fill = "#383737") +
+  geom_text(aes(label = paste0("n = ", samples)), 
+            vjust = -0.5, # Adjust the vertical position
+            color = "black", 
+            size = 3.5) + # Adjust the size of the text
+  labs(x = "Fasting Days", y = "Detection Proportion", title = "Detection Proportion by Fasting Days") +
+  theme_classic() 
+
+
+# can also visualize total detections with bar chart
+ggplot(host1_detection_table, aes(x = as.factor(fasting_days), y = detection_total)) +
+  geom_bar(stat = "identity", fill = "#383737") +
+  geom_text(aes(label = paste0("n = ", samples, " (", det_proportion*100, "%)")), 
+            vjust = -0.5, # Adjust the vertical position
+            color = "black", 
+            size = 3.5) + # Adjust the size of the text
+  labs(x = "Fasting Days", y = "Detection Total", title = "Host 1 Detection Total by Fasting Days") +
+  theme_classic() 
+
+
 
 #----- Statistical Comparisons
 
 # differences in detections between host order using logistic regression
-m1_rep1 <- glm(host1_det_rep1 ~ fasting_days, data = host_data_reps, family = binomial)
-m1_rep2 <- 
+m1_rep1 <- glm(host1_det_rep1 ~ fasting_days + weight_gain_1, data = host_data_reps, family = binomial)
+m1_rep2 <- glm(host1_det_rep2 ~ fasting_days + weight_gain_1, data = host_data_reps, family = binomial)
+
+m2_rep1 <- glm(host2_det_rep1 ~ fasting_days + weight_gain_2, data = host_data_reps, family = binomial)
+m2_rep2 <- glm(host2_det_rep2 ~ fasting_days + weight_gain_2, data = host_data_reps, family = binomial)
+
+# Summarize the models to check the results
+summary(m1_rep1)
+summary(m1_rep2)
+
+summary(m2_rep1) # significant relationship with fasting days
+summary(m2_rep2)
+
+# also, can remove the NA values to work with clean data
+# for clean data, omit rows with NA in host1_det_rep1, host1_det_rep2, fasting_days, and rel_weight_gain
+host_data_reps_clean <- host_data_reps %>%
+  mutate(weight_gain_dif = weight_gain_1 - weight_gain_2,
+         rel_weight_gain = weight_gain_1 / (weight_gain_1 + weight_gain_2)) %>% # adds a row to check weight difference
+  filter(if_all(c(host1_det_rep1, host1_det_rep2, fasting_days, weight_gain_dif), ~ !is.na(.)))
+
+# for host 1 clean data
+m1_rep1_clean <- glm(host1_det_rep1 ~ fasting_days + weight_gain_dif, data = host_data_reps_clean, family = binomial)
+m1_rep2_clean <- glm(host1_det_rep2 ~ fasting_days + weight_gain_dif, data = host_data_reps_clean, family = binomial)
+
+summary(m1_rep1_clean)
+summary(m1_rep2_clean)
+# no significance
 
 
-# Summarize the model to check the results
-summary(model_1)
-summary(model_2)
-summary(model_both)
+
+
+#--------- Visualizing Detections
+
+# add column for at least one detections AND column for host species
+host_data_reps_clean <- host_data_reps_clean %>%
+  mutate(single_host_det = ifelse(host_data_reps_clean$host1_det_rep1 | host_data_reps_clean$host1_det_rep2 == 1, 1, 0),
+         host1_species = ifelse(host_data_reps_clean$host_1 == "Lake Trout", 1, 0)) # lake trout is 1, white sucker is 0
 
 
 
@@ -226,141 +308,74 @@ summary(model_both)
 
 
 
+#----- OCCUPANCY MODEL
+library(unmarked)
+
+# set up a singular, relative weight gain column to use as a covariate
+# use the clean data created in previous steps
+
+# set up detection matrix (host 1, both replicates)
+detections_host1 <- data.frame(rep1 = host_data_reps_clean$host1_det_rep1,
+                               rep2 = host_data_reps_clean$host1_det_rep2)
+
+
+# add in site covariates
+site_covs <- as.data.frame(select(host_data_reps_clean, 
+                                  fasting_days, 
+                                  weight_gain_dif,
+                                  rel_weight_gain,
+                                  host1_species)) 
+
+# set up covariate occupancy frame object
+cov_occu <- unmarkedFrameOccu(y = detections_host1, siteCovs = site_covs)
+summary(cov_occu)
+
+
+# set up various models to compare
+occu_null <- occu(formula = ~ 1 ~1, data = cov_occu)
+occu_m2 <- occu(formula = ~ weight_gain_dif + rel_weight_gain + fasting_days ~1, data = cov_occu)
+occu_m3 <- occu(formula = ~ weight_gain_dif * fasting_days ~1, data = cov_occu)
+occu_m4 <- occu(formula = ~ fasting_days ~1, data = cov_occu)
+occu_m5 <- occu(formula = ~ weight_gain_dif ~1, data = cov_occu)
+occu_m6 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu)
+occu_m7 <- occu(formula = ~ weight_gain_dif + fasting_days + host1_species ~1, data = cov_occu)
+
+# set the fit
+fit <- fitList('psi(.)p(.)' = occu_null,
+               'psi(.)p(weight_gain_dif + rel_weight_gain + fasting_days)' = occu_m2,
+               'psi(.)p(weight_gain_dif * fasting_days)' = occu_m3,
+               'psi(.)p(fasting_days)' = occu_m4,
+               'psi(.)p(weight_gain_dif)' = occu_m5,
+               'psi(.)p(rel_weight_gain)' = occu_m6,
+               'psi(.)p(total_weight_gain + fasting_days + host1_species)' = occu_m7)
+modSel(fit)
+# model with fasting days and weight dif not better than null, but still close
+
+# back transform
+backTransform(occu_m6, type = "state")
+backTransform(occu_m6, type = "det")
+
+
+# proportional weight predictions
+preds <- predict(occu_m6, type ="det", new = data.frame(rel_weight_gain = seq(-2, 2, by = 0.1)))
+
+ggplot(data = preds, aes(x = seq(-2, 2, by = 0.1), y = Predicted)) +
+  geom_smooth(stat = "smooth") +
+  #geom_ribbon(data = preds, aes(ymin = preds$lower, ymax = preds$upper), alpha = 0.2)
+  theme_classic()
+
+
+# fasting days predictions
+preds_2 <- predict(occu_m4, type ="det", new = data.frame(fasting_days = c(0:45)))
+
+ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
+  geom_smooth(stat = "smooth") +
+  geom_ribbon(data = preds_2, aes(ymin = preds_2$lower, ymax = preds_2$upper), alpha = 0.2) +
+  theme_classic()
 
 
 
 
-#-------------- OLD CODE USING AVERAGED COMMUNITY MATRIX -------------- 
-
-
-
-
-
-#------ Data Organization (AVERAGED COMMUNITY MATRIX - OLD, USING REPLICATE DATA)
-# Create a detection column for each host
-
-# add in total reads from seq_count, along with an rra column
-host_data <- host_data %>%
-  left_join(seq_count[, c(1, 10)], by = "sample") %>%
-  mutate(
-    rra_lt = round(lake_trout_reads / total_reads, 3), 
-    rra_ws = round(white_sucker_reads / total_reads, 3)
-  )
-
-# Thresholds for detection:
-# ----- Higher than 10 total reads
-# ----- Relative read abundance higher than 1% (of total sample reads)
-
-threshold <- 10 # 10 total read count
-rra <- .01  # 1% of total reads
-
-# add detection columns
-host_data <- host_data %>%
-  mutate(lt_det = ifelse(lake_trout_reads <= threshold | rra_lt < rra, 0, 1)) %>%
-  mutate(ws_det = ifelse(white_sucker_reads <= threshold | rra_ws < rra, 0, 1)) %>%
-  select(1:3, lt_det, ws_det, 4:9) # organize order
-
-
-# How often is there a detection for first, second and both hosts?
-first_host_counter <- 0
-second_host_counter <- 0
-both_host_counter <- 0
-
-# loop through each row
-for (i in 1:nrow(host_data)) {
-  # skip the row if first or second host is NA
-  if (is.na(host_data$host_1[i]) | is.na(host_data$host_2[i])) {
-    next
-  }
-  
-  # also skip if detection data is NA
-  if (is.na(host_data$lt_det[i]) | is.na(host_data$ws_det[i])) {
-    next
-  }
-  
-  # check conditions for first host 
-  if (host_data$host_1[i] == "Lake Trout" & host_data$lt_det[i] == 1) {
-    first_host_counter <- first_host_counter + 1
-  } else if (host_data$host_1[i] == "White Sucker" & host_data$ws_det[i] == 1) {
-    first_host_counter <- first_host_counter + 1
-  }
-  
-  # check conditions for second host
-  if (host_data$host_2[i] == "Lake Trout" & host_data$lt_det[i] == 1) {
-    second_host_counter <- second_host_counter + 1
-  } else if (host_data$host_2[i] == "White Sucker" & host_data$ws_det[i] == 1) {
-    second_host_counter <- second_host_counter + 1
-  }
-  
-  # check conditions for both hosts
-  if (host_data$lt_det[i] == 1 & host_data$ws_det[i] == 1) {
-    both_host_counter <- both_host_counter + 1
-  }
-}
-
-cat("Number of first host detections:", first_host_counter,
-    "\nNumber of second host detections:", second_host_counter,
-    "\nNumber of both host detections:", both_host_counter)
-
-# comparing detections to total
-total_lamprey <- host_data %>%
-  filter(!is.na(lt_det) | !is.na(ws_det)) %>%
-  filter(!(is.na(host_1) & is.na(host_2))) %>%
-  nrow()
-# 63 total lamprey samples (excluding NAs for host detections and both NAs for host data)
-
-# looking at percentages
-cat("First Host Percentage:", round((first_host_counter/total_lamprey * 100), 3),
-    "\nSecond Host Percentage:", round((second_host_counter/total_lamprey * 100), 3),
-    "\nBoth Host Percentage:", round((both_host_counter/total_lamprey * 100), 3))
-
-#------ AVERAGED COMMUNITY MATRIX (OLD - PRIMARILY USING REPLICATE DATA)
-# set up new columns
-host_data <- host_data %>%
-  mutate(host1_det = NA, host2_det = NA, both_host_det = NA)
-
-# assign 1 or 0 to each of the host detection columns 
-for (i in 1:nrow(host_data)) {
-  # skip the row if first or second host is NA
-  if (is.na(host_data$host_1[i]) & is.na(host_data$host_2[i])) {
-    next
-  }
-  
-  # also skip if detection data is NA
-  if (is.na(host_data$lt_det[i]) & is.na(host_data$ws_det[i])) {
-    next
-  }
-  
-  # set detection columns to 0, if passing the two NA checks
-  host_data$host1_det[i] <- 0
-  host_data$host2_det[i] <- 0
-  host_data$both_host_det[i] <- 0
-  
-  # add 1 if first host was detected (and not NA)
-  if (!is.na(host_data$host_1[i]) & host_data$host_1[i] == "Lake Trout" & host_data$lt_det[i] == 1) {
-    host_data$host1_det[i] <- 1
-  } else if (!is.na(host_data$host_1[i]) & host_data$host_1[i] == "White Sucker" & host_data$ws_det[i] == 1) {
-    host_data$host1_det[i] <- 1
-  } else {
-    host_data$host1_det[i] <- 0
-  }
-  
-  # add 1 if second host was detected (and not NA)
-  if (!is.na(host_data$host_2[i]) & host_data$host_2[i] == "Lake Trout" & host_data$lt_det[i] == 1) {
-    host_data$host2_det[i] <- 1
-  } else if (!is.na(host_data$host_2[i]) & host_data$host_2[i] == "White Sucker" & host_data$ws_det[i] == 1) {
-    host_data$host2_det[i] <- 1
-  } else {
-    host_data$host2_det[i] <- 0
-  }
-  
-  # add one of both hosts were detected
-  if (host_data$lt_det[i] == 1 & host_data$ws_det[i] == 1) {
-    host_data$both_host_det[i] <- 1
-  } else {
-    host_data$both_host_det[i] <- 0
-  }
-}
 
 
 
