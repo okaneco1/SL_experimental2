@@ -22,15 +22,16 @@ host2_data <- read_csv("obj3_cleaned_data_host2_updated.csv")
 
 # -------
 # function for processing
-process_cm_data <- function(data, lake_trout_cols, white_sucker_cols) {
+process_cm_data <- function(data, lake_trout_cols, white_sucker_cols, sea_lamprey_cols) {
   data %>%
     filter(grepl("T23", sample)) %>%
     filter(!grepl("T23_30", sample)) %>%
     mutate(
       lake_trout_reads = rowSums(select(., all_of(lake_trout_cols))), 
-      white_sucker_reads = rowSums(select(., all_of(white_sucker_cols)))
+      white_sucker_reads = rowSums(select(., all_of(white_sucker_cols))),
+      sea_lamprey_reads = rowSums(select(., all_of(sea_lamprey_cols)))
     ) %>%
-    select(sample, lake_trout_reads, white_sucker_reads)
+    select(sample, lake_trout_reads, white_sucker_reads, sea_lamprey_reads)
 }
 
 # --------
@@ -41,7 +42,10 @@ cm_data_avg <- process_cm_data(cm_data_avg,
                                     "Salvelinus_unclassified_mean"),
                 white_sucker_cols = c("Catostomus_commersonii_mean",
                                       "Catostomidae_unclassified_mean",
-                                      "Catostomus_unclassified_mean"))
+                                      "Catostomus_unclassified_mean"),
+                sea_lamprey_cols = c("Petromyzontidae_unclassified_mean",
+                                     "Ichthyomyzon_fossor_mean",
+                                     "Lampetra_appendix_mean"))
 
 # -------
 # ensure "sample" is first column for replicate datasets
@@ -55,14 +59,20 @@ cm_data_rep1 <- process_cm_data(cm_data_rep1,
                                                    "Salvelinus_unclassified"),
                                white_sucker_cols = c("Catostomus_commersonii",
                                                      "Catostomidae_unclassified",
-                                                     "Catostomus_unclassified"))
+                                                     "Catostomus_unclassified"),
+                               sea_lamprey_cols = c("Petromyzontidae_unclassified",
+                                                    "Ichthyomyzon_fossor",
+                                                    "Lampetra_appendix"))
 cm_data_rep2 <- process_cm_data(cm_data_rep2,
                                 lake_trout_cols = c("Salmonidae_unclassified",
                                                     "Salvelinus_namaycush",
                                                     "Salvelinus_unclassified"),
                                 white_sucker_cols = c("Catostomus_commersonii",
                                                       "Catostomidae_unclassified",
-                                                      "Catostomus_unclassified"))
+                                                      "Catostomus_unclassified"),
+                                sea_lamprey_cols = c("Petromyzontidae_unclassified",
+                                                     "Ichthyomyzon_fossor",
+                                                     "Lampetra_appendix"))
 
 # making names the same
 cm_data_rep1$sample <- sub("\\.12S", "", cm_data_rep1$sample)
@@ -74,9 +84,13 @@ cm_data_rep2 <- cm_data_rep2[order(cm_data_rep2[[1]], decreasing = FALSE), ]
 
 # ------- combine host 1 and host 2 data
 host1_columns <- data.frame(tag = host1_data$`Lamprey Tag (color)`,
-                            host = host1_data$`Host Species`)
+                            host = host1_data$`Host Species`,
+                            weight_gain = host1_data$`Change in Weight(g)`,
+                            days_attached = host1_data$`Days Attached`)
 host2_columns <- data.frame(tag = host2_data$`Lamprey Tag (color)`,
-                            host = host2_data$`Host species`)
+                            host = host2_data$`Host species`,
+                            weight_gain = host2_data$`Change in Weight(g)`,
+                            days_attached = host2_data$`Days Attached`)
 
 # combine both
 host_data <- full_join(host1_columns, host2_columns, by = "tag",
@@ -149,21 +163,7 @@ full_host_data %>%
 full_host_data$tube <- sub("T20(\\d{2}_\\d+)", "T\\1", full_host_data$tube)
 
 
-# can align host order data with sequencing data (AVERAGED COMMUNITY MATRIX)
-# full join
-full_data <- full_host_data %>%
-  rename(sample = tube) %>%
-  full_join(cm_data_avg, by = "sample")
-# reorder
-full_data <- full_data[,c(4,2:3,6:7,5)]
-# arrange sample order
-full_data <- full_data %>% arrange(sample)
-
-# write out as own data file
-write_csv(full_data, "host_switch_data_averaged.csv")
-
-
-# can also combine with REPLICATE SPECIFIC DATA
+# can combine with REPLICATE SPECIFIC DATA
 
 # start with combining replicate read data
 cm_both_reps <- full_join(cm_data_rep1, cm_data_rep2, by = "sample", suffix = c("_rep1", "_rep2"))
@@ -210,3 +210,17 @@ host_order <- host_order %>%
   ungroup()
 
 
+
+
+# can align host order data with sequencing data (AVERAGED COMMUNITY MATRIX)
+# full join
+full_data <- full_host_data %>%
+  rename(sample = tube) %>%
+  full_join(cm_data_avg, by = "sample")
+# reorder
+full_data <- full_data[,c(4,2:3,6:7,5)]
+# arrange sample order
+full_data <- full_data %>% arrange(sample)
+
+# write out as own data file
+write_csv(full_data, "host_switch_data_averaged.csv")
