@@ -16,7 +16,8 @@ cm_data_reps <- read_csv("host_switch_data_replicates.csv")
 # create data frame for total sample reads (average)
 seq_count <- cm_data_avg %>%
   filter(grepl("T23", sample)) %>%
-  filter(!grepl("T23_30", sample)) %>%
+  # specific samples to remove
+  filter(!grepl("T23_30", sample) & !grepl("T23_18", sample)) %>%
   select(c(1:3, 5:6, 9, 22, 29, 32)) %>% # selecting lake trout, white sucker, and sea lamprey 
   mutate(total_reads = rowSums(across(-1)))
 
@@ -25,9 +26,12 @@ host_data$fasting_days <- as.numeric(host_data$fasting_days)
 cm_data_reps$fasting_days <- as.numeric(cm_data_reps$fasting_days)
 
 #------ Data Organization (REPLICATES COMMUNITY MATRIX)
+# filter out samples
+cm_data_reps <- cm_data_reps %>%
+  filter(!grepl("T23_30", sample)) #& !grepl("T23_18", sample))
 
 # reorder data frame
-cm_data_reps <- cm_data_reps[,c(6,2:5,7:13)]
+cm_data_reps <- cm_data_reps[,c(8,2:7,9:15)]
 # add in total reads (both reps)
 cm_data_reps <- cm_data_reps %>%
   mutate(
@@ -55,6 +59,10 @@ host_data_reps <- cm_data_reps %>%
   mutate(ws_det_rep1 = ifelse(white_sucker_reads_rep1 <= threshold | rra_ws_rep1 < rra, 0, 1)) %>%
   mutate(lt_det_rep2 = ifelse(lake_trout_reads_rep2 <= threshold | rra_lt_rep2 < rra, 0, 1)) %>%
   mutate(ws_det_rep2 = ifelse(white_sucker_reads_rep2 <= threshold | rra_ws_rep2 < rra, 0, 1)) 
+
+# if weight loss, register as 0 (no weight gain)
+host_data_reps$weight_gain_1[host_data_reps$weight_gain_1 < 0] <- 0
+host_data_reps$weight_gain_2[host_data_reps$weight_gain_2 < 0] <- 0
 
 # add total weight gain column
 host_data_reps <- host_data_reps %>%
@@ -282,7 +290,7 @@ summary(m2_rep2)
 host_data_reps_clean <- host_data_reps %>%
   mutate(weight_gain_dif = weight_gain_1 - weight_gain_2,
          rel_weight_gain = weight_gain_1 / (weight_gain_1 + weight_gain_2)) %>% # adds a row to check weight difference
-  filter(if_all(c(host1_det_rep1, host1_det_rep2, fasting_days, weight_gain_dif), ~ !is.na(.)))
+  filter(if_all(c(host1_det_rep1, host1_det_rep2, fasting_days, weight_gain_dif, days_attached_1, days_attached_2), ~ !is.na(.)))
 
 # for host 1 clean data
 m1_rep1_clean <- glm(host1_det_rep1 ~ fasting_days + weight_gain_dif, data = host_data_reps_clean, family = binomial)
@@ -300,7 +308,8 @@ summary(m1_rep2_clean)
 # add column for at least one detections AND column for host species
 host_data_reps_clean <- host_data_reps_clean %>%
   mutate(single_host_det = ifelse(host_data_reps_clean$host1_det_rep1 | host_data_reps_clean$host1_det_rep2 == 1, 1, 0),
-         host1_species = ifelse(host_data_reps_clean$host_1 == "Lake Trout", 1, 0)) # lake trout is 1, white sucker is 0
+         host1_species = ifelse(host_data_reps_clean$host_1 == "Lake Trout", 1, 0)) %>% # lake trout is 1, white sucker is 0
+  arrange(sample)
 
 
 
@@ -308,8 +317,28 @@ host_data_reps_clean <- host_data_reps_clean %>%
 
 
 
-#----- OCCUPANCY MODEL
+#--------------- OCCUPANCY MODEL
 library(unmarked)
+
+# some visualizations first
+long_det_data <- host_data_reps_clean %>%
+  pivot_longer(cols = c(host1_det_rep1, host1_det_rep2),
+               names_to = "replicate",
+               values_to = "host1_detection")
+# relative weight gain
+ggplot(long_det_data, aes(x = rel_weight_gain, y = host1_detection, color = replicate)) +
+  geom_point() +
+  geom_jitter(width = 0.01, height = 0.02) +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_minimal()
+# fasting days
+host1_fast <- ggplot(long_det_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
+  geom_point() +
+  geom_jitter(width = 0.5, height = 0.02) +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_minimal()
+
+
 
 # set up a singular, relative weight gain column to use as a covariate
 # use the clean data created in previous steps
@@ -321,10 +350,12 @@ detections_host1 <- data.frame(rep1 = host_data_reps_clean$host1_det_rep1,
 
 # add in site covariates
 site_covs <- as.data.frame(select(host_data_reps_clean, 
-                                  fasting_days, 
-                                  weight_gain_dif,
+                                  fasting_days,
                                   rel_weight_gain,
-                                  host1_species)) 
+                                  host1_species,
+                                  weight_gain_2,
+                                  days_attached_1,
+                                  days_attached_2)) 
 
 # set up covariate occupancy frame object
 cov_occu <- unmarkedFrameOccu(y = detections_host1, siteCovs = site_covs)
@@ -333,40 +364,67 @@ summary(cov_occu)
 
 # set up various models to compare
 occu_null <- occu(formula = ~ 1 ~1, data = cov_occu)
-occu_m2 <- occu(formula = ~ weight_gain_dif + rel_weight_gain + fasting_days ~1, data = cov_occu)
-occu_m3 <- occu(formula = ~ weight_gain_dif * fasting_days ~1, data = cov_occu)
+occu_m2 <- occu(formula = ~ rel_weight_gain + fasting_days + host1_species ~1, data = cov_occu)
+occu_m3 <- occu(formula = ~ rel_weight_gain * fasting_days ~1, data = cov_occu)
 occu_m4 <- occu(formula = ~ fasting_days ~1, data = cov_occu)
-occu_m5 <- occu(formula = ~ weight_gain_dif ~1, data = cov_occu)
-occu_m6 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu)
-occu_m7 <- occu(formula = ~ weight_gain_dif + fasting_days + host1_species ~1, data = cov_occu)
+occu_m5 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu)
+occu_m6 <- occu(formula = ~ host1_species ~1, data = cov_occu)
+occu_m7 <- occu(formula = ~ rel_weight_gain + fasting_days ~1, data = cov_occu)
+occu_m8 <- occu(formula = ~ weight_gain_2 ~1, data = cov_occu)
+occu_m9 <- occu(formula = ~ weight_gain_2 + rel_weight_gain ~1, data = cov_occu)
+occu_m10 <- occu(formula = ~ weight_gain_2 + rel_weight_gain + fasting_days ~1, data = cov_occu)
+occu_m11 <- occu(formula = ~ days_attached_1 ~1, data = cov_occu)
+occu_m12 <- occu(formula = ~ days_attached_2 ~1, data = cov_occu)
+occu_m13 <- occu(formula = ~ days_attached_2 + rel_weight_gain ~1, data = cov_occu)
 
 # set the fit
 fit <- fitList('psi(.)p(.)' = occu_null,
-               'psi(.)p(weight_gain_dif + rel_weight_gain + fasting_days)' = occu_m2,
-               'psi(.)p(weight_gain_dif * fasting_days)' = occu_m3,
+               'psi(.)p(rel_weight_gain + fasting_days + host1_species)' = occu_m2,
+               'psi(.)p(rel_weight_gain * fasting_days)' = occu_m3,
                'psi(.)p(fasting_days)' = occu_m4,
-               'psi(.)p(weight_gain_dif)' = occu_m5,
-               'psi(.)p(rel_weight_gain)' = occu_m6,
-               'psi(.)p(total_weight_gain + fasting_days + host1_species)' = occu_m7)
+               'psi(.)p(rel_weight_gain)' = occu_m5,
+               'psi(.)p(host1_species)' = occu_m6,
+               'psi(.)p(rel_weight_gain + fasting_days)' = occu_m7,
+               'psi(.)p(weight_gain_2)' = occu_m8,
+               'psi(.)p(weight_gain_2 + rel_weight_gain)' = occu_m9,
+               'psi(.)p(weight_gain_2 + rel_weight_gain + fasting_days)' = occu_m10,
+               'psi(.)p(days_attached_1)' = occu_m11,
+               'psi(.)p(days_attached_2)' = occu_m12,
+               'psi(.)p(days_attached_2 + rel_weight_gain)' = occu_m13)
 modSel(fit)
 # model with fasting days and weight dif not better than null, but still close
 
 # back transform
-backTransform(occu_m6, type = "state")
-backTransform(occu_m6, type = "det")
+backTransform(occu_m5, type = "state")
+backTransform(occu_m5, type = "det") # null shows detection 
 
+# setting up as a linear combination
+det_est <- coef(occu_m7, type = "det")
+backTransform(det_est, type = "det")
+# Create a linear combination for the detection estimates
+# Assuming your detection formula has an intercept and two covariates (rel_weight_gain and fasting_days)
+lc_det <- linearComb(occu_m7, coefficients = c(1, mean(cov_occu@siteCovs$rel_weight_gain), mean(cov_occu@siteCovs$fasting_days)), type = "det")
+# Back-transform the linear combination
+back_transform_det <- backTransform(lc_det)
+
+# can also use an anti-logit function
+antilogit <- function(x) { exp(x) / (1 + exp(x) ) }
+antilogit(coef(occu_m5)["p(rel_weight_gain)"])
+
+
+# PREDICTIONS
 
 # proportional weight predictions
-preds <- predict(occu_m6, type ="det", new = data.frame(rel_weight_gain = seq(-2, 2, by = 0.1)))
+preds <- predict(occu_m5, type ="det", new = data.frame(rel_weight_gain = seq(0, 1, by = 0.1)))
 
-ggplot(data = preds, aes(x = seq(-2, 2, by = 0.1), y = Predicted)) +
+ggplot(data = preds, aes(x = seq(0, 1, by = 0.1), y = Predicted)) +
   geom_smooth(stat = "smooth") +
-  #geom_ribbon(data = preds, aes(ymin = preds$lower, ymax = preds$upper), alpha = 0.2)
+  geom_ribbon(data = preds, aes(ymin = lower, ymax = upper), alpha = 0.2)
   theme_classic()
 
 
-# fasting days predictions
-preds_2 <- predict(occu_m4, type ="det", new = data.frame(fasting_days = c(0:45)))
+# fasting days predictions (with model that incorporates)
+preds_2 <- predict(occu_m7, type ="det", new = data.frame(fasting_days = c(0:45),rel_weight_gain = seq(0, 1, length = 46)))
 
 ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
   geom_smooth(stat = "smooth") +
@@ -376,9 +434,122 @@ ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
 
 
 
+# relative weight gain patten?
+cov_occu@y[,1]
+df1 <- host_data_reps_clean[,c(6, 24, 26, 31)]
+df1 <- mutate(df1, total_det = rowSums(across(c(host1_det_rep1, host1_det_rep2))))
+
+ggplot(df1, aes(x = rel_weight_gain, y = total_det)) +
+  geom_point() +
+  geom_smooth(method = "loess")
+ggplot(df1, aes(x = fasting_days, y = total_det)) +
+  geom_point(alpha = 0.5) +
+  geom_jitter(height = 0.1) +
+  geom_smooth(method = "loess")
 
 
 
 
 
+
+
+
+# ------- LINEAR MODELS COMPARING READ COUNT
+
+# adding a host 1 read count column
+host_data_reps_clean$host1_read_count_rep1 <- NA
+host_data_reps_clean$host1_read_count_rep2 <- NA
+
+for (i in 1:nrow(host_data_reps_clean)) {
+  if (host_data_reps_clean$host_1[i] == "Lake Trout") {
+    host_data_reps_clean$host1_read_count_rep1[i] <- host_data_reps_clean$lake_trout_reads_rep1[i]
+    host_data_reps_clean$host1_read_count_rep2[i] <- host_data_reps_clean$lake_trout_reads_rep2[i]
+  }
+  else if (host_data_reps_clean$host_1[i] == "White Sucker") {
+    host_data_reps_clean$host1_read_count_rep1[i] <- host_data_reps_clean$white_sucker_reads_rep1[i]
+    host_data_reps_clean$host1_read_count_rep2[i] <- host_data_reps_clean$white_sucker_reads_rep2[i]
+  }
+}
+
+# viewing data
+hist(host_data_reps_clean$host1_read_count_rep1)
+hist(host_data_reps_clean$host1_read_count_rep2)
+# reshape for plot
+long_data <- host_data_reps_clean %>%
+  pivot_longer(cols = c(host1_read_count_rep1, host1_read_count_rep2),
+               names_to = "replicate",
+               values_to = "read_count")
+
+# plot each variable against read count (for each rep)
+ggplot(long_data, aes(x = rel_weight_gain, y = read_count, color = replicate)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_minimal()
+ggplot(long_data, aes(x = fasting_days, y = read_count, color = replicate)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = FALSE) +
+  geom_jitter() +
+  theme_minimal()
+ggplot(long_data, aes(x = host1_species, y = read_count, color = replicate)) +
+  geom_point() +
+  geom_smooth(method = "loess") +
+  theme_minimal()
+
+
+# setting up linear models
+log_lm1 <- lm(log1p(host1_read_count_rep1) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+
+
+# checking plot
+par(mfrow = c(2, 2))
+plot(log_lm1)
+
+par(mfrow = c(1, 1))
+
+summary(log_lm1)
+
+
+
+
+
+
+# ------- misc._data <- host_data_reps_clean %>%
+  pivot_longer(cols = c(host2_det_rep1, host2_det_rep2),
+               names_to = "replicate",
+               values_to = "host2_detection")
+# fasting days
+host2_fast <- ggplot(long_det_host2_data, aes(x = fasting_days, y = host2_detection, color = replicate)) +
+  geom_point() +
+  geom_jitter(width = 0.5, height = 0.02) +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_minimal()
+# relative weight gain (host 1)
+ggplot(long_det_host2_data, aes(x = rel_weight_gain, y = host2_detection, color = replicate)) +
+  geom_point() +
+  geom_jitter(width = 0.01, height = 0.02) +
+  geom_smooth(method = "loess", se = FALSE) +
+  theme_minimal()
+
+# plot both fasting graphs
+grid.arrange(host1_fast, host2_fast, ncol=2)
+
+#check
+which(host_data_reps_clean$host1_det_rep1+host_data_reps_clean$host1_det_rep2 > 0 & host_data_reps_clean$host2_det_rep1+host_data_reps_clean$host2_det_rep2 > 0)
+view(host_data_reps_clean[which(host_data_reps_clean$host1_det_rep1+host_data_reps_clean$host1_det_rep2 > 0 & host_data_reps_clean$host2_det_rep1+host_data_reps_clean$host2_det_rep2 > 0), ])
+
+
+# ---- contour
+# Generate list of increasing values for elev and length
+ngrid <- 45   # Number of grid points
+xvals <- seq(from = min(site_covs$fasting_days), to = max(site_covs$fasting_days), length = 46)
+yvals <- seq(from = min(site_covs$rel_weight_gain), to = max(site_covs$rel_weight_gain), length = 46)
+
+# Generate matrix of occupancy probabilities
+x.elev <- rep(xvals, length(xvals))
+y.length <- rep(yvals, each=length(xvals))
+zvals <- matrix(predict(occu_m7, type="det", new=data.frame(fasting_days=x.elev, rel_weight_gain=y.length))$Predict, nrow=ngrid+1)
+
+# Produce contour plot
+contour(xvals, yvals, zvals, nlevels=10, las=1,
+        xlab="Fasting Days", ylab="Relative Weight Gain (Host 1)", main="Predicted occupancy probabilities")
 
