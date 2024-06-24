@@ -513,7 +513,8 @@ summary(log_lm1)
 
 
 
-# ------- misc._data <- host_data_reps_clean %>%
+# ------- misc._data 
+long_det_host2_data <- host_data_reps_clean %>%
   pivot_longer(cols = c(host2_det_rep1, host2_det_rep2),
                names_to = "replicate",
                values_to = "host2_detection")
