@@ -7,6 +7,7 @@ library(tidyverse)
 library(readxl)
 library(patchwork)
 library(RColorBrewer)
+library(gridExtra)
 
 # import data
 host_data <- read_csv("host_switch_data_averaged.csv")
@@ -28,7 +29,7 @@ cm_data_reps$fasting_days <- as.numeric(cm_data_reps$fasting_days)
 #------ Data Organization (REPLICATES COMMUNITY MATRIX)
 # filter out samples
 cm_data_reps <- cm_data_reps %>%
-  filter(!grepl("T23_30", sample)) #& !grepl("T23_18", sample))
+  filter(!grepl("T23_30", sample) & !grepl("T23_18", sample))
 
 # reorder data frame
 cm_data_reps <- cm_data_reps[,c(8,2:7,9:15)]
@@ -79,7 +80,8 @@ host_data_reps <- host_data_reps %>%
          host1_det_rep2 = NA, 
          host2_det_rep2 = NA,
          both_host_det_rep1 = NA,
-         both_host_det_rep2 = NA)
+         both_host_det_rep2 = NA,
+         both_hosts = NA)
 
 # loop to set detections (0 = no detection, 1 = detection)
 # assign 1 or 0 to each of the host detection columns 
@@ -179,6 +181,7 @@ for (i in 1:nrow(host_data_reps)) {
     host_data_reps$both_host_det_rep2[i] <- 0
   }
 }
+
 
 
 
@@ -325,18 +328,46 @@ long_det_data <- host_data_reps_clean %>%
   pivot_longer(cols = c(host1_det_rep1, host1_det_rep2),
                names_to = "replicate",
                values_to = "host1_detection")
+
 # relative weight gain
 ggplot(long_det_data, aes(x = rel_weight_gain, y = host1_detection, color = replicate)) +
-  geom_point() +
-  geom_jitter(width = 0.01, height = 0.02) +
+  geom_jitter(width = 0.01, height = 0.01) +
+  labs(x = "Relative Weight Gain", y = "Host 1 Detection", 
+       title = "Host 1 Detections per Replicate vs Relative Weight Gain",
+       color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
-  theme_minimal()
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.85, 0.7),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
+
 # fasting days
-host1_fast <- ggplot(long_det_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
-  geom_point() +
+ggplot(long_det_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
   geom_jitter(width = 0.5, height = 0.02) +
+  labs(x = "Fasting Days", y = "Host 1 Detection", 
+       title = "Host 1 Detections per Replicate vs Fasting Days",
+       color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
-  theme_minimal()
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.85, 0.7),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
 
 
 
@@ -553,4 +584,204 @@ zvals <- matrix(predict(occu_m7, type="det", new=data.frame(fasting_days=x.elev,
 # Produce contour plot
 contour(xvals, yvals, zvals, nlevels=10, las=1,
         xlab="Fasting Days", ylab="Relative Weight Gain (Host 1)", main="Predicted occupancy probabilities")
+
+
+
+
+
+# ------------------------------------------------------------------
+# looking at removing if hosts did NOT feed on a second host
+# ------------------------------------------------------------------
+
+# this is because if there is no second host feeding, detection of 
+# an feeding history is nullified, as only a single host was fed on
+
+# start by simplifying the data (only lamprey with two hosts)
+two_hosts_data <- host_data_reps_clean %>%
+  filter(weight_gain_2 > 0)
+
+# some visualizations first (as before)
+long_two_hosts_data <- two_hosts_data %>%
+  pivot_longer(cols = c(host1_det_rep1, host1_det_rep2),
+               names_to = "replicate",
+               values_to = "host1_detection")
+
+# relative weight gain (host 1)
+host1_two_hosts_weight_plot <- ggplot(long_two_hosts_data, aes(x = rel_weight_gain, y = host1_detection, color = replicate)) +
+  geom_jitter(width = 0.01, height = 0.01) +
+  labs(x = "Relative Weight Gain", y = "Host 1 Detection", 
+       title = "Host 1 Detections per Replicate vs Relative Weight Gain",
+       color = "Replicate") +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.85, 0.7),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
+
+
+# optional to remove LOESS warnings, adds jitter to fasting days so they are
+# treated more as a continuous variable
+
+#long_two_hosts_data$fasting_days <- jitter(long_two_hosts_data$fasting_days, factor=1)
+
+# fasting days
+host1_two_hosts_fasting_plot <- ggplot(long_two_hosts_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
+  geom_jitter(width = 0.5, height = 0.02) +
+  labs(x = "Fasting Days", y = "Host 1 Detection", 
+       title = "Host 1 Detections per Replicate vs Fasting Days",
+       color = "Replicate") +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.2, 0.7),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
+
+# NOTE: warnings do not seem to make a difference compared to non-jittered graph
+
+
+# set up detection matrix (host 1, both replicates, both host data)
+detections_host1_two_hosts <- data.frame(rep1 = two_hosts_data$host1_det_rep1,
+                                         rep2 = two_hosts_data$host1_det_rep2)
+
+
+# add in site covariates (simplified from previous)
+site_covs2 <- as.data.frame(select(two_hosts_data, 
+                                  fasting_days,
+                                  rel_weight_gain)) 
+
+# set up covariate occupancy frame object
+cov_occu2 <- unmarkedFrameOccu(y = detections_host1_two_hosts, siteCovs = site_covs2)
+summary(cov_occu2)
+
+
+# set up various models to compare (just with relative weight gain and fasting period)
+occu_null_2 <- occu(formula = ~ 1 ~1, data = cov_occu)
+occu_m1_2 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu)
+occu_m2_2 <- occu(formula = ~ rel_weight_gain + fasting_days ~1, data = cov_occu)
+
+# set the fit
+fit2 <- fitList('psi(.)p(.)' = occu_null,
+               'psi(.)p(rel_weight_gain)' = occu_m1_2,
+               'psi(.)p(rel_weight_gain + fasting_days)' = occu_m2_2)
+modSel(fit2)
+# model with fasting days and weight dif not better than null, but still close
+
+# back transform
+backTransform(occu_m1_2, type = "state")
+backTransform(occu_m1_2, type = "det") # null shows detection 
+
+
+# PREDICTIONS
+
+# proportional weight predictions
+preds <- predict(occu_m1_2, type ="det", new = data.frame(rel_weight_gain = seq(0, 1, by = 0.1)))
+
+ggplot(data = preds, aes(x = seq(0, 1, by = 0.1), y = Predicted)) +
+  geom_smooth(stat = "smooth") +
+  geom_ribbon(data = preds, aes(ymin = lower, ymax = upper), alpha = 0.2)
+theme_classic()
+
+
+#---------------------------
+# visualizing host 1 and host 2 together for two hosts data
+
+long_two_hosts_data_2 <- host_data_reps_clean %>%
+  filter(weight_gain_2 > 0) %>%
+  pivot_longer(cols = c(host2_det_rep1, host2_det_rep2),
+               names_to = "replicate",
+               values_to = "host2_detection")
+
+# relative weight gain (host 2)
+host2_two_hosts_weight_plot <- ggplot(long_two_hosts_data_2, aes(x = rel_weight_gain, y = host2_detection, color = replicate)) +
+  geom_jitter(width = 0.01, height = 0.01) +
+  labs(x = "Relative Host 1 Weight Gain", y = "Host 2 Detection", 
+       title = "Host 2 Detections per Replicate vs Relative Host 1 Weight Gain",
+       color = "Replicate") +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.85, 0.7),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
+
+# fasting days (host 2)
+host2_two_hosts_fasting_plot <- ggplot(long_two_hosts_data_2, aes(x = fasting_days, y = host2_detection, color = replicate)) +
+  geom_jitter(width = 0.5, height = 0.02) +
+  labs(x = "Fasting Days", y = "Host 2 Detection", 
+       title = "Host 2 Detections per Replicate vs Fasting Days",
+       color = "Replicate") +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = c("#87CEEB", "#228B22"),
+                     labels = c("Replicate 1", "Replicate 2")) +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12),
+        legend.position = "inside",
+        legend.title = element_text(face = "bold"),
+        legend.position.inside = c(0.2, 0.35),
+        legend.background = element_rect(fill = alpha('white', 0.5), color = NA))
+
+
+# plot both fasting graphs
+grid.arrange(host1_two_hosts_fasting_plot, host2_two_hosts_fasting_plot, ncol=2)
+
+# can create additional column for both detections (in any replicate)
+# finally, add one for both host detections of either replicate
+host_data_reps_clean$both_hosts <- 0
+
+# count both host detections
+for (i in 1:nrow(host_data_reps_clean)) {
+  if (host_data_reps_clean$host1_det_rep1[i] == 1 | host_data_reps_clean$host1_det_rep2[i] == 1) {
+    if (host_data_reps_clean$host2_det_rep1[i] == 1 | host_data_reps_clean$host2_det_rep2[i] == 1) {
+      host_data_reps_clean$both_hosts[i] <- 1
+    }
+  }
+}
+
+# filter out to only lamprey that fed on both hosts
+host_data_reps_clean <- host_data_reps_clean %>%
+  filter(weight_gain_2 > 0)
+
+# fasting plot for both hosts detections
+both_hosts_fasting_plot <- ggplot(host_data_reps_clean, aes(x = fasting_days, y = both_hosts)) +
+  geom_jitter(width = 0.5, height = 0.02) +
+  labs(x = "Fasting Days", y = "Both Hosts Detection (Either Replicate)", 
+       title = "Both Host Detections in Either Replicate vs Fasting Days") +
+  geom_smooth(method = "loess", se = FALSE) +
+  scale_color_manual(values = "#87CEEB") +
+  geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
+  geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+
+
+
 
