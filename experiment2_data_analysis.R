@@ -426,12 +426,11 @@ modSel(fit)
 # model with fasting days and weight dif not better than null, but still close
 
 # back transform
-backTransform(occu_m5, type = "state")
-backTransform(occu_m5, type = "det") # null shows detection 
+#backTransform(occu_m5, type = "state")
+backTransform(occu_null, type = "det") # null shows detection 
 
 # setting up as a linear combination
 det_est <- coef(occu_m7, type = "det")
-backTransform(det_est, type = "det")
 # Create a linear combination for the detection estimates
 # Assuming your detection formula has an intercept and two covariates (rel_weight_gain and fasting_days)
 lc_det <- linearComb(occu_m7, coefficients = c(1, mean(cov_occu@siteCovs$rel_weight_gain), mean(cov_occu@siteCovs$fasting_days)), type = "det")
@@ -461,22 +460,6 @@ ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
   geom_smooth(stat = "smooth") +
   geom_ribbon(data = preds_2, aes(ymin = preds_2$lower, ymax = preds_2$upper), alpha = 0.2) +
   theme_classic()
-
-
-
-
-# relative weight gain patten?
-cov_occu@y[,1]
-df1 <- host_data_reps_clean[,c(6, 24, 26, 31)]
-df1 <- mutate(df1, total_det = rowSums(across(c(host1_det_rep1, host1_det_rep2))))
-
-ggplot(df1, aes(x = rel_weight_gain, y = total_det)) +
-  geom_point() +
-  geom_smooth(method = "loess")
-ggplot(df1, aes(x = fasting_days, y = total_det)) +
-  geom_point(alpha = 0.5) +
-  geom_jitter(height = 0.1) +
-  geom_smooth(method = "loess")
 
 
 
@@ -570,27 +553,15 @@ which(host_data_reps_clean$host1_det_rep1+host_data_reps_clean$host1_det_rep2 > 
 view(host_data_reps_clean[which(host_data_reps_clean$host1_det_rep1+host_data_reps_clean$host1_det_rep2 > 0 & host_data_reps_clean$host2_det_rep1+host_data_reps_clean$host2_det_rep2 > 0), ])
 
 
-# ---- contour
-# Generate list of increasing values for elev and length
-ngrid <- 45   # Number of grid points
-xvals <- seq(from = min(site_covs$fasting_days), to = max(site_covs$fasting_days), length = 46)
-yvals <- seq(from = min(site_covs$rel_weight_gain), to = max(site_covs$rel_weight_gain), length = 46)
-
-# Generate matrix of occupancy probabilities
-x.elev <- rep(xvals, length(xvals))
-y.length <- rep(yvals, each=length(xvals))
-zvals <- matrix(predict(occu_m7, type="det", new=data.frame(fasting_days=x.elev, rel_weight_gain=y.length))$Predict, nrow=ngrid+1)
-
-# Produce contour plot
-contour(xvals, yvals, zvals, nlevels=10, las=1,
-        xlab="Fasting Days", ylab="Relative Weight Gain (Host 1)", main="Predicted occupancy probabilities")
-
 
 
 
 
 # ------------------------------------------------------------------
 # looking at removing if hosts did NOT feed on a second host
+
+# additionally, using pcount() to set occupancy 1 (essentially does not
+# include an occupancy calculation in the model)
 # ------------------------------------------------------------------
 
 # this is because if there is no second host feeding, detection of 
@@ -636,7 +607,7 @@ host1_two_hosts_weight_plot <- ggplot(long_two_hosts_data, aes(x = rel_weight_ga
 host1_two_hosts_fasting_plot <- ggplot(long_two_hosts_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
   geom_jitter(width = 0.5, height = 0.02) +
   labs(x = "Fasting Days", y = "Host 1 Detection", 
-       title = "Host 1 Detections per Replicate vs Fasting Days",
+       title = "Host 1 Detections per Replicate",
        color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
   scale_color_manual(values = c("#87CEEB", "#228B22"),
@@ -659,43 +630,73 @@ host1_two_hosts_fasting_plot <- ggplot(long_two_hosts_data, aes(x = fasting_days
 detections_host1_two_hosts <- data.frame(rep1 = two_hosts_data$host1_det_rep1,
                                          rep2 = two_hosts_data$host1_det_rep2)
 
-
 # add in site covariates (simplified from previous)
 site_covs2 <- as.data.frame(select(two_hosts_data, 
                                   fasting_days,
                                   rel_weight_gain)) 
 
 # set up covariate occupancy frame object
-cov_occu2 <- unmarkedFrameOccu(y = detections_host1_two_hosts, siteCovs = site_covs2)
+cov_occu2 <- unmarkedFramePCount(y = detections_host1_two_hosts, siteCovs = site_covs2)
 summary(cov_occu2)
 
 
 # set up various models to compare (just with relative weight gain and fasting period)
-occu_null_2 <- occu(formula = ~ 1 ~1, data = cov_occu)
-occu_m1_2 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu)
-occu_m2_2 <- occu(formula = ~ rel_weight_gain + fasting_days ~1, data = cov_occu)
+pcount_null_2 <- pcount(~ 1 ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
+pcount_m1_2 <- pcount(~ rel_weight_gain ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
+pcount_m2_2 <- pcount(~ rel_weight_gain + fasting_days ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
 
 # set the fit
-fit2 <- fitList('psi(.)p(.)' = occu_null,
-               'psi(.)p(rel_weight_gain)' = occu_m1_2,
-               'psi(.)p(rel_weight_gain + fasting_days)' = occu_m2_2)
+fit2 <- fitList('p(.)' = pcount_null_2,
+                'p(rel_weight_gain)' = pcount_m1_2,
+                'p(rel_weight_gain + fasting_days)' = pcount_m2_2)
 modSel(fit2)
 # model with fasting days and weight dif not better than null, but still close
 
-# back transform
-backTransform(occu_m1_2, type = "state")
-backTransform(occu_m1_2, type = "det") # null shows detection 
-
 
 # PREDICTIONS
-
 # proportional weight predictions
-preds <- predict(occu_m1_2, type ="det", new = data.frame(rel_weight_gain = seq(0, 1, by = 0.1)))
+preds <- predict(pcount_m2_2, type ="det", newdata = data.frame(rel_weight_gain = seq(0, 1, length = 46),
+                                                                fasting_days = seq(0, 45, by =1)))
 
-ggplot(data = preds, aes(x = seq(0, 1, by = 0.1), y = Predicted)) +
+# plot predictions
+ggplot(data = preds, aes(x = seq(0, 1, length = 46), y = Predicted)) +
   geom_smooth(stat = "smooth") +
-  geom_ribbon(data = preds, aes(ymin = lower, ymax = upper), alpha = 0.2)
-theme_classic()
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  theme_classic()
+
+
+# -----
+# contour plot of occupancy model
+library(geomtextpath)
+
+# generate grid points
+ngrid <- 45   # Number of grid points
+xvals <- seq(from = min(site_covs$fasting_days), to = max(site_covs$fasting_days), length.out = ngrid + 1)
+yvals <- seq(from = min(site_covs$rel_weight_gain), to = max(site_covs$rel_weight_gain), length.out = ngrid + 1)
+
+# generate matrix of occupancy probabilities
+x.elev <- rep(xvals, length(xvals))
+y.length <- rep(yvals, each = length(xvals))
+
+# prediction function
+zvals <- matrix(predict(pcount_m2_2, type="det", new=data.frame(fasting_days=x.elev, rel_weight_gain=y.length))$Predict, nrow=ngrid+1)
+
+# make data suitable for ggplot
+contour_data <- expand.grid(fasting_days = xvals, rel_weight_gain = yvals)
+contour_data$occupancy_prob <- as.vector(zvals)
+
+# contour plot
+ggplot(contour_data, aes(x = fasting_days, y = rel_weight_gain, z = occupancy_prob)) +
+  stat_contour_filled(breaks = seq(0, 1, by = 0.1)) +
+  geom_textcontour(linecolour = "#242424", textcolour = "#242424") + 
+  labs(x = "Fasting Days", y = "Relative Weight Gain (Host 1)", 
+       title = "Host 1 Predicted Detection Probabilities") +  
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+
+
+
 
 
 #---------------------------
@@ -731,7 +732,7 @@ host2_two_hosts_weight_plot <- ggplot(long_two_hosts_data_2, aes(x = rel_weight_
 host2_two_hosts_fasting_plot <- ggplot(long_two_hosts_data_2, aes(x = fasting_days, y = host2_detection, color = replicate)) +
   geom_jitter(width = 0.5, height = 0.02) +
   labs(x = "Fasting Days", y = "Host 2 Detection", 
-       title = "Host 2 Detections per Replicate vs Fasting Days",
+       title = "Host 2 Detections per Replicate",
        color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
   scale_color_manual(values = c("#87CEEB", "#228B22"),
@@ -753,34 +754,97 @@ grid.arrange(host1_two_hosts_fasting_plot, host2_two_hosts_fasting_plot, ncol=2)
 
 # can create additional column for both detections (in any replicate)
 # finally, add one for both host detections of either replicate
-host_data_reps_clean$both_hosts <- 0
+two_hosts_data$both_hosts <- 0
 
 # count both host detections
-for (i in 1:nrow(host_data_reps_clean)) {
-  if (host_data_reps_clean$host1_det_rep1[i] == 1 | host_data_reps_clean$host1_det_rep2[i] == 1) {
-    if (host_data_reps_clean$host2_det_rep1[i] == 1 | host_data_reps_clean$host2_det_rep2[i] == 1) {
-      host_data_reps_clean$both_hosts[i] <- 1
+for (i in 1:nrow(two_hosts_data)) {
+  if (two_hosts_data$host1_det_rep1[i] == 1 | two_hosts_data$host1_det_rep2[i] == 1) {
+    if (two_hosts_data$host2_det_rep1[i] == 1 | two_hosts_data$host2_det_rep2[i] == 1) {
+      two_hosts_data$both_hosts[i] <- 1
     }
   }
 }
 
-# filter out to only lamprey that fed on both hosts
-host_data_reps_clean <- host_data_reps_clean %>%
-  filter(weight_gain_2 > 0)
-
 # fasting plot for both hosts detections
 both_hosts_fasting_plot <- ggplot(host_data_reps_clean, aes(x = fasting_days, y = both_hosts)) +
-  geom_jitter(width = 0.5, height = 0.02) +
-  labs(x = "Fasting Days", y = "Both Hosts Detection (Either Replicate)", 
-       title = "Both Host Detections in Either Replicate vs Fasting Days") +
-  geom_smooth(method = "loess", se = FALSE) +
-  scale_color_manual(values = "#87CEEB") +
+  geom_jitter(width = 0.5, height = 0.02, color = "#003582") +
+  labs(x = "Fasting Days", y = "Both Hosts Detection", 
+       title = "Both Host Detections in Either Replicate") +
+  geom_smooth(method = "loess", se = FALSE, color = "#003582") +
   geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
   geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
   theme_minimal() +
   theme(plot.title = element_text(face = "bold", size = 16),
         axis.title.x = element_text(face = "bold", size = 12),
         axis.title.y = element_text(face = "bold", size = 12))
+
+# plot all together
+grid.arrange(host1_two_hosts_fasting_plot, 
+             host2_two_hosts_fasting_plot,
+             both_hosts_fasting_plot, ncol=2)
+
+
+
+#----------------------------------------------------------------------------
+# looking at occupancy models and contour plots for both host detections
+
+# occupancy models first
+# set up detection matrix (host 1, both replicates, both host data)
+detections_both_hosts <- data.frame(detections = two_hosts_data$both_hosts)
+# set up covariate occupancy frame object (use same covariates)
+cov_occu3 <- unmarkedFramePCount(y = detections_both_hosts, siteCovs = site_covs2)
+summary(cov_occu3)
+# set up various models to compare (just with relative weight gain and fasting period)
+pcount_null_3 <- pcount(~ 1 ~1, data = cov_occu3, K = 3)
+pcount_m1_3 <- pcount(~ rel_weight_gain ~1, data = cov_occu3, K = 3)
+pcount_m2_3 <- pcount(~ rel_weight_gain + fasting_days ~1, data = cov_occu3, K = 3)
+# set the fit
+fit3 <- fitList('p(.)' = pcount_null_3,
+                'p(rel_weight_gain)' = pcount_m1_3,
+                'p(rel_weight_gain + fasting_days)' = pcount_m2_3)
+modSel(fit3)
+# model with fasting days and weight dif not better than null, but still close
+
+# proportional weight predictions
+preds3 <- predict(pcount_m2_3, type ="det", newdata = data.frame(rel_weight_gain = seq(0, 1, length = 46),
+                                                                fasting_days = seq(0, 45, by =1)))
+# plot predictions
+ggplot(data = preds3, aes(x = seq(0, 1, length = 46), y = Predicted)) +
+  geom_smooth(stat = "smooth") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  theme_classic()
+
+# contour plot as before
+xvals2 <- seq(from = min(site_covs2$fasting_days), to = max(site_covs2$fasting_days), length.out = ngrid + 1)
+yvals2 <- seq(from = min(site_covs2$rel_weight_gain), to = max(site_covs2$rel_weight_gain), length.out = ngrid + 1)
+
+# generate matrix of occupancy probabilities
+x.elev2 <- rep(xvals2, length(xvals2))
+y.length2 <- rep(yvals2, each = length(xvals2))
+
+# prediction function
+zvals2 <- matrix(predict(pcount_m2_3, type="det", new=data.frame(fasting_days=x.elev2, rel_weight_gain=y.length2))$Predict, nrow=ngrid+1)
+
+# make data suitable for ggplot
+contour_data2 <- expand.grid(fasting_days = xvals2, rel_weight_gain = yvals2)
+contour_data2$occupancy_prob <- as.vector(zvals2)
+
+# contour plot
+ggplot(contour_data2, aes(x = fasting_days, y = rel_weight_gain, z = occupancy_prob)) +
+  stat_contour_filled(breaks = seq(0, 1, by = 0.1)) +
+  geom_textcontour(linecolour = "#242424", textcolour = "#242424") + 
+  labs(x = "Fasting Days", y = "Relative Weight Gain (Host 1)", 
+       title = "Both Hosts Predicted Detection Probabilities") +  
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+
+
+
+
+
+
+
 
 
 
