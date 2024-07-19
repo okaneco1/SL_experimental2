@@ -469,6 +469,7 @@ ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
 
 
 # ------- LINEAR MODELS COMPARING READ COUNT
+library(MASS)
 
 # adding a host 1 read count column
 host_data_reps_clean$host1_read_count_rep1 <- NA
@@ -486,7 +487,7 @@ for (i in 1:nrow(host_data_reps_clean)) {
 }
 
 # viewing data
-hist(host_data_reps_clean$host1_read_count_rep1)
+hist(log(host_data_reps_clean$host1_read_count_rep1))
 hist(host_data_reps_clean$host1_read_count_rep2)
 # reshape for plot
 long_data <- host_data_reps_clean %>%
@@ -497,21 +498,30 @@ long_data <- host_data_reps_clean %>%
 # plot each variable against read count (for each rep)
 ggplot(long_data, aes(x = rel_weight_gain, y = read_count, color = replicate)) +
   geom_point() +
-  geom_smooth(method = "loess", se = FALSE) +
+  geom_smooth(method = "lm", se = FALSE) +
   theme_minimal()
 ggplot(long_data, aes(x = fasting_days, y = read_count, color = replicate)) +
   geom_point() +
-  geom_smooth(method = "loess", se = FALSE) +
+  geom_smooth(method = "loess", se = FALSE, span = 1) + # span increased to desensitize fit
   geom_jitter() +
   theme_minimal()
 ggplot(long_data, aes(x = host1_species, y = read_count, color = replicate)) +
   geom_point() +
-  geom_smooth(method = "loess") +
+  geom_smooth(method = "lm", se = FALSE) +
   theme_minimal()
 
 
 # setting up linear models
-log_lm1 <- lm(log1p(host1_read_count_rep1) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+lm1 <- lm((host1_read_count_rep1) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+negbin_lm <- glm.nb(host1_read_count_rep1 ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+library(pscl)
+zinb_lm <- zeroinfl(host1_read_count_rep1 ~ rel_weight_gain + fasting_days + host1_species | 1, 
+                    data = host_data_reps_clean, 
+                    dist = "negbin")
+# summaries
+summary(zinb_lm)
+
+
 
 
 # checking plot
