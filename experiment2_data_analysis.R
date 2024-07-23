@@ -582,12 +582,9 @@ view(host_data_reps_clean[which(host_data_reps_clean$host1_det_rep1+host_data_re
 # ------------------------------------------------------------------
 # looking at removing if hosts did NOT feed on a second host
 
-# additionally, using pcount() to set occupancy 1 (essentially does not
-# include an occupancy calculation in the model)
-# ------------------------------------------------------------------
-
 # this is because if there is no second host feeding, detection of 
 # an feeding history is nullified, as only a single host was fed on
+# ------------------------------------------------------------------
 
 # start by simplifying the data (only lamprey with two hosts)
 two_hosts_data <- host_data_reps_clean %>%
@@ -703,7 +700,7 @@ backTransform(occu_null_2, type = "det") # null shows detection
 
 # PREDICTIONS
 
-# proportional weight predictions
+# days attache to 2nd host predictions
 preds_attach_2 <- predict(occu_m11_2, type ="det", new = data.frame(days_attached_1 = seq(2, 7, by = 1)))
 
 ggplot(data = preds_attach_2, aes(x = seq(2, 7, by = 1), y = Predicted)) +
