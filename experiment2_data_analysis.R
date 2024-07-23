@@ -8,6 +8,7 @@ library(readxl)
 library(patchwork)
 library(RColorBrewer)
 library(gridExtra)
+library(pscl)
 
 # import data
 host_data <- read_csv("host_switch_data_averaged.csv")
@@ -425,41 +426,54 @@ fit <- fitList('psi(.)p(.)' = occu_null,
 modSel(fit)
 # model with fasting days and weight dif not better than null, but still close
 
+# best models are with days attached, relative weight gain, and weight gain
+# can look at plotting these for predictions
+
 # back transform
 #backTransform(occu_m5, type = "state")
 backTransform(occu_null, type = "det") # null shows detection 
 
-# setting up as a linear combination
-det_est <- coef(occu_m7, type = "det")
-# Create a linear combination for the detection estimates
-# Assuming your detection formula has an intercept and two covariates (rel_weight_gain and fasting_days)
-lc_det <- linearComb(occu_m7, coefficients = c(1, mean(cov_occu@siteCovs$rel_weight_gain), mean(cov_occu@siteCovs$fasting_days)), type = "det")
-# Back-transform the linear combination
-back_transform_det <- backTransform(lc_det)
-
-# can also use an anti-logit function
-antilogit <- function(x) { exp(x) / (1 + exp(x) ) }
-antilogit(coef(occu_m5)["p(rel_weight_gain)"])
-
-
 # PREDICTIONS
 
-# proportional weight predictions
-preds <- predict(occu_m5, type ="det", new = data.frame(rel_weight_gain = seq(0, 1, by = 0.1)))
+# days attached (to 2nd host)
+preds_attach <- predict(occu_m12, type ="det", new = data.frame(days_attached_2 = seq(0, 10, by = 1)))
 
-ggplot(data = preds, aes(x = seq(0, 1, by = 0.1), y = Predicted)) +
+ggplot(data = preds_attach, aes(x = seq(0, 10, by = 1), y = Predicted)) +
   geom_smooth(stat = "smooth") +
-  geom_ribbon(data = preds, aes(ymin = lower, ymax = upper), alpha = 0.2)
-  theme_classic()
+  geom_ribbon(data = preds_attach, aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  labs(x = "Days Attached (Host 2)", y = "Host 1 Detection Probability", 
+       title = "Host 1 Detection Probability vs Days Attached (Host 2)") +
+  theme_classic() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+  
 
+# relative weight gain
+preds_rel_weight <- predict(occu_m5, type ="det", new = data.frame(rel_weight_gain = seq(0, 1, by = 0.1)))
 
-# fasting days predictions (with model that incorporates)
-preds_2 <- predict(occu_m7, type ="det", new = data.frame(fasting_days = c(0:45),rel_weight_gain = seq(0, 1, length = 46)))
-
-ggplot(data = preds_2, aes(x = c(0:45), y = Predicted)) +
+ggplot(data = preds_rel_weight, aes(x = seq(0, 1, by = 0.1), y = Predicted)) +
   geom_smooth(stat = "smooth") +
-  geom_ribbon(data = preds_2, aes(ymin = preds_2$lower, ymax = preds_2$upper), alpha = 0.2) +
-  theme_classic()
+  geom_ribbon(data = preds_rel_weight, aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  labs(x = "Relative Weight Gain (g)", y = "Host 1 Detection Probability", 
+       title = "Host 1 Detection Probability vs Relative Weight Gain (g)") +
+  theme_classic() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+
+# host 2 total weight gain
+preds_weight_gain <- predict(occu_m8, type ="det", new = data.frame(weight_gain_2 = seq(0, 2, by = 0.1)))
+
+ggplot(data = preds_weight_gain, aes(x = seq(0, 2, by = 0.1), y = Predicted)) +
+  geom_smooth(stat = "smooth") +
+  geom_ribbon(data = preds_weight_gain, aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  labs(x = "Host 2 Weight Gain (g)", y = "Host 1 Detection Probability", 
+       title = "Host 1 Detection Probability vs Host 2 Weight Gain (g)") +
+  theme_classic() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
 
 
 
@@ -511,27 +525,25 @@ ggplot(long_data, aes(x = host1_species, y = read_count, color = replicate)) +
   theme_minimal()
 
 
-# setting up linear models
-lm1 <- lm((host1_read_count_rep1) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
-negbin_lm <- glm.nb(host1_read_count_rep1 ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
-library(pscl)
-zinb_lm <- zeroinfl(host1_read_count_rep1 ~ rel_weight_gain + fasting_days + host1_species | 1, 
+# Linear Models
+
+# will first combine rep1 and rep2 read counts so that they are both considered
+host_data_reps_clean <- mutate(host_data_reps_clean, host1_read_count_avg = rowMeans(cbind(host1_read_count_rep1,
+                                                                                           host1_read_count_rep2)))
+
+# setting up models (need to round for models that accept count data)
+lm1 <- lm((host1_read_count_avg) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+negbin_lm <- glm.nb(round(host1_read_count_avg) ~ rel_weight_gain + host1_species + fasting_days, data = host_data_reps_clean)
+zinb_lm <- zeroinfl(round(host1_read_count_avg) ~ rel_weight_gain + fasting_days + host1_species | 1, 
                     data = host_data_reps_clean, 
                     dist = "negbin")
-# summaries
-summary(zinb_lm)
+# AIC comparisoons
+AIC(lm1)
+AIC(negbin_lm)
+AIC(zinb_lm)
 
-
-
-
-# checking plot
-par(mfrow = c(2, 2))
-plot(log_lm1)
-
-par(mfrow = c(1, 1))
-
-summary(log_lm1)
-
+# negative binomial shows highest AIC again, so can use that
+summary(negbin_lm)
 
 
 
@@ -641,38 +653,68 @@ detections_host1_two_hosts <- data.frame(rep1 = two_hosts_data$host1_det_rep1,
                                          rep2 = two_hosts_data$host1_det_rep2)
 
 # add in site covariates (simplified from previous)
-site_covs2 <- as.data.frame(select(two_hosts_data, 
-                                  fasting_days,
-                                  rel_weight_gain)) 
+site_covs2 <- as.data.frame(dplyr::select(two_hosts_data, 
+                                          fasting_days,
+                                          rel_weight_gain,
+                                          host1_species,
+                                          weight_gain_2,
+                                          days_attached_1,
+                                          days_attached_2)) 
 
 # set up covariate occupancy frame object
-cov_occu2 <- unmarkedFramePCount(y = detections_host1_two_hosts, siteCovs = site_covs2)
+cov_occu2 <- unmarkedFrameOccu(y = detections_host1_two_hosts, siteCovs = site_covs2)
 summary(cov_occu2)
 
 
 # set up various models to compare (just with relative weight gain and fasting period)
-pcount_null_2 <- pcount(~ 1 ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
-pcount_m1_2 <- pcount(~ rel_weight_gain ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
-pcount_m2_2 <- pcount(~ rel_weight_gain + fasting_days ~ rel_weight_gain + fasting_days, data = cov_occu2, K = 3)
+occu_null_2 <- occu(formula = ~ 1 ~1, data = cov_occu2)
+occu_m2_2 <- occu(formula = ~ rel_weight_gain + fasting_days + host1_species ~1, data = cov_occu2)
+occu_m3_2 <- occu(formula = ~ rel_weight_gain * fasting_days ~1, data = cov_occu2)
+occu_m4_2 <- occu(formula = ~ fasting_days ~1, data = cov_occu2)
+occu_m5_2 <- occu(formula = ~ rel_weight_gain ~1, data = cov_occu2)
+occu_m6_2 <- occu(formula = ~ host1_species ~1, data = cov_occu2)
+occu_m7_2 <- occu(formula = ~ rel_weight_gain + fasting_days ~1, data = cov_occu2)
+occu_m8_2 <- occu(formula = ~ weight_gain_2 ~1, data = cov_occu2)
+occu_m9_2 <- occu(formula = ~ weight_gain_2 + rel_weight_gain ~1, data = cov_occu2)
+occu_m10_2 <- occu(formula = ~ weight_gain_2 + rel_weight_gain + fasting_days ~1, data = cov_occu2)
+occu_m11_2 <- occu(formula = ~ days_attached_1 ~1, data = cov_occu2)
+occu_m12_2 <- occu(formula = ~ days_attached_2 ~1, data = cov_occu2)
+occu_m13_2 <- occu(formula = ~ days_attached_2 + rel_weight_gain ~1, data = cov_occu2)
 
 # set the fit
-fit2 <- fitList('p(.)' = pcount_null_2,
-                'p(rel_weight_gain)' = pcount_m1_2,
-                'p(rel_weight_gain + fasting_days)' = pcount_m2_2)
+fit <- fitList('psi(.)p(.)' = occu_null_2,
+               'psi(.)p(rel_weight_gain + fasting_days + host1_species)' = occu_m2_2,
+               'psi(.)p(rel_weight_gain * fasting_days)' = occu_m3_2,
+               'psi(.)p(fasting_days)' = occu_m4_2,
+               'psi(.)p(rel_weight_gain)' = occu_m5_2,
+               'psi(.)p(host1_species)' = occu_m6_2,
+               'psi(.)p(rel_weight_gain + fasting_days)' = occu_m7_2,
+               'psi(.)p(weight_gain_2)' = occu_m8_2,
+               'psi(.)p(weight_gain_2 + rel_weight_gain)' = occu_m9_2,
+               'psi(.)p(weight_gain_2 + rel_weight_gain + fasting_days)' = occu_m10_2,
+               'psi(.)p(days_attached_1)' = occu_m11_2,
+               'psi(.)p(days_attached_2)' = occu_m12_2,
+               'psi(.)p(days_attached_2 + rel_weight_gain)' = occu_m13_2)
 modSel(fit2)
 # model with fasting days and weight dif not better than null, but still close
+summary(occu_null_2)
+backTransform(occu_null_2, type = "det") # null shows detection 
 
 
 # PREDICTIONS
-# proportional weight predictions
-preds <- predict(pcount_m2_2, type ="det", newdata = data.frame(rel_weight_gain = seq(0, 1, length = 46),
-                                                                fasting_days = seq(0, 45, by =1)))
 
-# plot predictions
-ggplot(data = preds, aes(x = seq(0, 1, length = 46), y = Predicted)) +
-  geom_smooth(stat = "smooth") +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
-  theme_classic()
+# proportional weight predictions
+preds_attach_2 <- predict(occu_m11_2, type ="det", new = data.frame(days_attached_1 = seq(2, 7, by = 1)))
+
+ggplot(data = preds_attach_2, aes(x = seq(2, 7, by = 1), y = Predicted)) +
+  geom_smooth(stat = "smooth", se = FALSE) +
+  geom_ribbon(data = preds_attach_2, aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  labs(x = "Days Attached (Host 1)", y = "Host 1 Detection Probability", 
+       title = "Host 1 Detection Probability vs Days Attached (Host 1)") +
+  theme_classic() +
+  theme(plot.title = element_text(face = "bold", size = 16),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
 
 
 # -----
