@@ -28,11 +28,35 @@ seq_count <- cm_data_avg %>%
          Catostomus_commersonii_mean, Petromyzontidae_unclassified_mean,
          Salvelinus_unclassified_mean, Catostomidae_unclassified_mean, 
          Catostomus_unclassified_mean) %>% # selecting lake trout, white sucker, and sea lamprey 
-  mutate(total_reads = rowSums(across(-1)))
+  mutate(total_reads = rowSums(across(-1)),
+         all_trout = rowSums(across(c(Salmonidae_unclassified_mean, Salvelinus_namaycush_mean))))
+
+#visualization
+seq_count_long <- pivot_longer(seq_count, 
+                               cols = c(Catostomus_commersonii_mean, all_trout),
+                               names_to = "species",
+                               values_to = "read_count")
+seq_count_long$species <- factor(seq_count_long$species, levels = c("all_trout", "Catostomus_commersonii_mean"))
+
+ggplot(seq_count_long, aes(x = sample, y = read_count, fill = species)) +
+  geom_col() +
+  scale_fill_manual(
+    values = c("Catostomus_commersonii_mean" = "#a68ee6", "all_trout" = "#306352"), # Reverse color order
+    labels = c("Catostomus_commersonii_mean" = "White Sucker", "all_trout" = "Lake Trout"),
+    name = "Species") +
+  labs(x = "Sample",
+       y = "Host Fish Sequence Reads") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = c(0.43, 0.85),
+    legend.background = element_rect(fill = "white", color = "black"))
 
 # structure adjustments
 host_data$fasting_days <- as.numeric(host_data$fasting_days)
 cm_data_reps$fasting_days <- as.numeric(cm_data_reps$fasting_days)
+
+
 
 #------ Data Organization (REPLICATES COMMUNITY MATRIX)
 # filter out samples
@@ -576,7 +600,7 @@ host1_two_hosts_fasting_plot <- ggplot(long_two_hosts_data, aes(x = fasting_days
 #-----------------------------------------------------
 # set up detection data frame, along with column for at least one det between reps
 detection_df <- two_hosts_data %>%
-  select(sample, host1_det_rep1, host1_det_rep2, fasting_days) %>%
+  dplyr::select(sample, host1_det_rep1, host1_det_rep2, fasting_days) %>%
   mutate(host1_det_both = ifelse(host1_det_rep1 == 1 | host1_det_rep2 == 1, 1, 0))
 
 detection_df_stats <- detection_df %>%
