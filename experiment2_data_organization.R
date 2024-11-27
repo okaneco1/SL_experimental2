@@ -179,39 +179,6 @@ write_csv(full_reps_data, "host_switch_data_replicates.csv")
 
 
 
-
-
-
-
-
-
-
-#-------- old code
-# first making a data frame linking host order to lamprey
-host_order <- data.frame(lamprey = rep(NA, nrow(host_data)), # empty data frame
-                         host_1 = NA, host_2 = NA)
-for (i in 1:nrow(host_data)) {
-  if (host_data$host_number[i] == 1) {
-    host_order$lamprey[i] <- host_data$`Lamprey Tag (color)`[i]
-    host_order$host_1[i] <- host_data$`Host Species`[i]
-  }
-  if (host_data$host_number[i] == 2) {
-    host_order$lamprey[i] <- host_data$`Lamprey Tag (color)`[i]
-    host_order$host_2[i] <- host_data$`Host Species`[i]
-  }
-}
-# group hosts with lamprey
-host_order <- host_order %>% 
-  group_by(lamprey) %>%
-  summarize(
-    host_1 = first(na.omit(host_1)),
-    host_2 = first(na.omit(host_2))
-  ) %>%
-  ungroup()
-
-
-
-
 # can align host order data with sequencing data (AVERAGED COMMUNITY MATRIX)
 # full join
 full_data <- full_host_data %>%
@@ -224,3 +191,6 @@ full_data <- full_data %>% arrange(sample)
 
 # write out as own data file
 write_csv(full_data, "host_switch_data_averaged.csv")
+
+
+
