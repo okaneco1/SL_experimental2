@@ -430,6 +430,8 @@ AIC(lm1)
 AIC(negbin_lm)
 AIC(zinb_lm)
 
+summary(negbin_lm)
+
 # negative binomial shows highest AIC again, so can use that
 
 # use dredge to check all combinations
