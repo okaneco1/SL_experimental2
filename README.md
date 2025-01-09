@@ -1,6 +1,6 @@
 ## Host Switching Data Analysis
 
-This analysis investigates the retention of host fish DNA in sea lamprey following consecutive feedings on two host species: lake trout and white sucker. The analysis examines the impact of fasting periods, weight gain, adn days attached on host DNA detection.
+This analysis investigates the retention of host fish DNA in sea lamprey following consecutive feedings on two host species: lake trout and white sucker. The analysis examines the impact of fasting periods, weight gain, and days attached on host DNA detection.
 
 
 *Sequence Read Count Calculation:* Host fish DNA read counts are summed and visualized to compare lake trout and white sucker sequence proportions across samples.
