@@ -29,28 +29,55 @@ seq_count <- cm_data_avg %>%
          Salvelinus_unclassified_mean, Catostomidae_unclassified_mean, 
          Catostomus_unclassified_mean) %>% # selecting lake trout, white sucker, and sea lamprey 
   mutate(total_reads = rowSums(across(-1)),
-         all_trout = rowSums(across(c(Salmonidae_unclassified_mean, Salvelinus_namaycush_mean))))
+         all_trout = rowSums(across(c(Salmonidae_unclassified_mean, Salvelinus_namaycush_mean)))) %>%
+  rename(white_sucker = Catostomus_commersonii_mean)
 
-#visualization
+#prepare for bar chart visualization
 seq_count_long <- pivot_longer(seq_count, 
-                               cols = c(Catostomus_commersonii_mean, all_trout),
+                               cols = c(white_sucker, all_trout),
                                names_to = "species",
-                               values_to = "read_count")
-seq_count_long$species <- factor(seq_count_long$species, levels = c("all_trout", "Catostomus_commersonii_mean"))
+                               values_to = "read_count") %>%
+  dplyr::select(sample, species, read_count)
+seq_count_long$species <- factor(seq_count_long$species, levels = c("all_trout", "white_sucker"))
 
-ggplot(seq_count_long, aes(x = sample, y = read_count, fill = species)) +
+# adding the fasting days for x axis labels
+seq_metadata <- host_data %>% dplyr::select(sample, fasting_days) %>%
+  mutate(weight_gain = cm_data_reps$weight_gain_2)
+seq_count_long_days <- seq_count_long %>%
+  left_join(seq_metadata, by = "sample") %>%
+  mutate(fasting_days = na_if(fasting_days, "n/a")) %>%
+  filter(!is.na(fasting_days)) %>%
+  filter(weight_gain > 0) %>%
+  arrange(fasting_days)
+
+# set labels for fasting days
+fasting_labels <- seq_count_long_days %>%
+  distinct(sample, fasting_days) %>%
+  deframe() 
+
+# refactor fasting days for proper order
+seq_count_long_days <- seq_count_long_days %>%
+  mutate(fasting_days = as.numeric(fasting_days)) %>%
+  mutate(sample = factor(sample, levels = unique(sample[order(fasting_days)])))
+
+  
+# plotting
+ggplot(seq_count_long_days, aes(x = sample, y = read_count, fill = species)) +
   geom_col() +
   scale_fill_manual(
-    values = c("Catostomus_commersonii_mean" = "#a68ee6", "all_trout" = "#306352"), # Reverse color order
-    labels = c("Catostomus_commersonii_mean" = "White Sucker", "all_trout" = "Lake Trout"),
+    values = c("white_sucker" = "#a68ee6", "all_trout" = "#306352"), # Reverse color order
+    labels = c("white_sucker" = "White Sucker", "all_trout" = "Lake Trout"),
     name = "Species") +
-  labs(x = "Sample",
+  scale_x_discrete(labels = fasting_labels) +
+  labs(x = "Fasting Days",
        y = "Host Fish Sequence Reads") +
   theme_minimal() +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = c(0.43, 0.85),
+    legend.position = c(0.85, 0.85),
     legend.background = element_rect(fill = "white", color = "black"))
+
+
 
 # structure adjustments
 host_data$fasting_days <- as.numeric(host_data$fasting_days)
@@ -575,8 +602,8 @@ host1_two_hosts_weight_plot <- ggplot(long_two_hosts_data, aes(x = rel_weight_ga
 # fasting days
 host1_two_hosts_fasting_plot <- ggplot(long_two_hosts_data, aes(x = fasting_days, y = host1_detection, color = replicate)) +
   geom_jitter(width = 0.5, height = 0.02) +
-  labs(x = "Fasting Days", y = "Host 1 Detection", 
-       title = "a)",
+  labs(x = "Fasting Days", y = "Detection Rate (Host 1)", 
+       title = "A)",
        color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
   scale_color_manual(values = c("#87CEEB", "#228B22"),
@@ -671,8 +698,8 @@ host2_two_hosts_weight_plot <- ggplot(long_two_hosts_data_2, aes(x = rel_weight_
 # fasting days (host 2)
 host2_two_hosts_fasting_plot <- ggplot(long_two_hosts_data_2, aes(x = fasting_days, y = host2_detection, color = replicate)) +
   geom_jitter(width = 0.5, height = 0.02) +
-  labs(x = "Fasting Days", y = "Host 2 Detection", 
-       title = "b)",
+  labs(x = "Fasting Days", y = "Detection Rate (Host 2)", 
+       title = "B)",
        color = "Replicate") +
   geom_smooth(method = "loess", se = FALSE) +
   scale_color_manual(values = c("#87CEEB", "#228B22"),
@@ -709,8 +736,8 @@ for (i in 1:nrow(two_hosts_data)) {
 # fasting plot for both hosts detections
 both_hosts_fasting_plot <- ggplot(two_hosts_data, aes(x = fasting_days, y = both_hosts)) +
   geom_jitter(width = 0.5, height = 0.02, color = "#003582") +
-  labs(x = "Fasting Days", y = "Both Hosts Detection", 
-       title = "c)") +
+  labs(x = "Fasting Days", y = "Detection Rate (Both Hosts)", 
+       title = "C)") +
   geom_smooth(method = "loess", se = FALSE, color = "#003582") +
   geom_hline(yintercept = 0, color = "#5c5e5c", linewidth = 0.5) +   
   geom_vline(xintercept = 0, color = "#5c5e5c", linewidth = 0.5) +
