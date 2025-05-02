@@ -65,17 +65,21 @@ seq_count_long_days <- seq_count_long_days %>%
 ggplot(seq_count_long_days, aes(x = sample, y = read_count, fill = species)) +
   geom_col() +
   scale_fill_manual(
-    values = c("white_sucker" = "#a68ee6", "all_trout" = "#306352"), # Reverse color order
+    values = c("white_sucker" = "#ad9be0", "all_trout" = "#4c8a75"), # Reverse color order
     labels = c("white_sucker" = "White Sucker", "all_trout" = "Lake Trout"),
     name = "Species") +
   scale_x_discrete(labels = fasting_labels) +
   labs(x = "Fasting Days",
        y = "Host Fish Sequence Reads") +
-  theme_minimal() +
+  theme_minimal(base_family = "Helvetica") +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = c(0.85, 0.85),
-    legend.background = element_rect(fill = "white", color = "black"))
+    legend.position = "right",
+    legend.background = element_rect(fill = "white", color = "black"),
+    panel.grid.major = element_line(color = alpha("gray", 0.1)),
+    panel.grid.minor = element_line(color = alpha("gray", 0.1))
+  )
+
 
 
 
