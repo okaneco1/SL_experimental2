@@ -41,13 +41,21 @@ seq_count_long <- pivot_longer(seq_count,
 seq_count_long$species <- factor(seq_count_long$species, levels = c("all_trout", "white_sucker"))
 
 # adding the fasting days for x axis labels
-seq_metadata <- host_data %>% dplyr::select(sample, fasting_days) %>%
-  mutate(weight_gain = cm_data_reps$weight_gain_2)
+seq_metadata <- host_data %>%
+  dplyr::select(sample, fasting_days) %>%
+  left_join(
+    cm_data_reps %>% 
+      filter(!is.na(sample)) %>%
+      dplyr::select(sample, weight_gain_2),
+    by = "sample"
+  )
+
+
 seq_count_long_days <- seq_count_long %>%
   left_join(seq_metadata, by = "sample") %>%
   mutate(fasting_days = na_if(fasting_days, "n/a")) %>%
   filter(!is.na(fasting_days)) %>%
-  filter(weight_gain > 0) %>%
+  filter(weight_gain_2 > 0) %>%
   arrange(fasting_days)
 
 # set labels for fasting days
@@ -65,10 +73,10 @@ seq_count_long_days <- seq_count_long_days %>%
 ggplot(seq_count_long_days, aes(x = sample, y = read_count, fill = species)) +
   geom_col() +
   scale_fill_manual(
-    values = c("white_sucker" = "#ad9be0", "all_trout" = "#4c8a75"), # Reverse color order
+    values = c("all_trout" = "#4c8a75", "white_sucker" = "#ad9be0"),
     labels = c("white_sucker" = "White Sucker", "all_trout" = "Lake Trout"),
     name = "Species") +
-  scale_x_discrete(labels = fasting_labels) +
+  #scale_x_discrete(labels = fasting_labels) +
   labs(x = "Fasting Days",
        y = "Host Fish Sequence Reads") +
   theme_minimal(base_family = "Helvetica") +
@@ -509,6 +517,7 @@ ggplot(long_det_host2_data, aes(x = rel_weight_gain, y = host2_detection, color 
 
 # plot both fasting graphs
 grid.arrange(host1_fast, host2_fast, ncol=2)
+
 
 #check
 which(host_data_reps_clean$host1_det_rep1+host_data_reps_clean$host1_det_rep2 > 0 & host_data_reps_clean$host2_det_rep1+host_data_reps_clean$host2_det_rep2 > 0)
